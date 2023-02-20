@@ -5,76 +5,78 @@
 #include <linux/kernel.h>
 #include <linux/proc_fs.h>
 #include <linux/sched.h>
+#include <linux/uaccess.h>
 
-#define PROCFS_MAX_SIZE 1024
-#define PROCFS_NAME "pidinfo"
+#define MAX_BUF_SIZE 256
 
-static char procfs_buffer[PROCFS_MAX_SIZE];
-static unsigned long procfs_buffer_size = 0;
 static struct proc_dir_entry *proc_file;
+static char proc_buffer[MAX_BUF_SIZE];
+static unsigned long proc_buffer_size = 0;
+static int pid = 0;
 
-static int pidinfo_read(char *buffer, char **buffer_location, off_t offset, int buffer_length, int *eof, void *data) {
-    int ret;
-    struct task_struct *task;
-    pid_t pid;
-
-    if (offset > 0) {
-        ret = 0;
-    } else {
-        pid = simple_strtol(data, NULL, 10);
-        task = pid_task(find_vpid(pid), PIDTYPE_PID);
-
-        if (task == NULL) {
-            ret = sprintf(procfs_buffer, "No task with pid %d\n", pid);
-        } else {
-            ret = sprintf(procfs_buffer, "Command: %s\nPID: %d\nState: %ld\n", task->comm, task_pid_nr(task), task->state);
-        }
-
-        memcpy(buffer, procfs_buffer, ret);
-    }
-
-    return ret;
-}
-
-static int pidinfo_write(struct file *file, const char *buffer, unsigned long count, void *data) {
-    if (count > PROCFS_MAX_SIZE) {
-        procfs_buffer_size = PROCFS_MAX_SIZE;
-    } else {
-        procfs_buffer_size = count;
-    }
-
-    if (copy_from_user(procfs_buffer, buffer, procfs_buffer_size)) {
+static int proc_write(struct file *file, const char __user *buffer,
+                      unsigned long count, void *data)
+{
+    if (count > MAX_BUF_SIZE) {
+        printk(KERN_INFO "proc_write: buffer size too large!\n");
         return -EFAULT;
     }
-
-    return procfs_buffer_size;
+    if (copy_from_user(proc_buffer, buffer, count)) {
+        printk(KERN_INFO "proc_write: failed to copy data from user space!\n");
+        return -EFAULT;
+    }
+    proc_buffer[count] = '\0';
+    kstrtoint(proc_buffer, 10, &pid);
+    return count;
 }
 
-static int __init pidinfo_init(void) {
-    proc_file = proc_create(PROCFS_NAME, 0644, NULL, &proc_fops);
+static int proc_read(char *page, char **start, off_t offset,
+                     int count, int *eof, void *data)
+{
+    int len = 0;
+    struct task_struct *task;
 
+    if (offset > 0) {
+        *eof = 1;
+        return 0;
+    }
+    if (pid == 0) {
+        len += sprintf(page + len, "Please write a valid process ID to /proc/pid\n");
+        return len;
+    }
+    task = pid_task(find_vpid(pid), PIDTYPE_PID);
+    if (task == NULL) {
+        len += sprintf(page + len, "Invalid process ID %d\n", pid);
+        return len;
+    }
+    len += sprintf(page + len, "Process ID: %d\n", pid);
+    len += sprintf(page + len, "Process Name: %s\n", task->comm);
+    len += sprintf(page + len, "Process State: %ld\n", task->state);
+    return len;
+}
+
+static int __init my_module_init(void)
+{
+    printk(KERN_INFO "my_module loaded\n");
+    proc_file = proc_create("pid", 0666, NULL, &proc_fops);
     if (proc_file == NULL) {
-        remove_proc_entry(PROCFS_NAME, NULL);
-        printk(KERN_ALERT "Error: Could not initialize /proc/%s\n", PROCFS_NAME);
+        printk(KERN_ERR "proc_create failed!\n");
         return -ENOMEM;
     }
-
-    printk(KERN_INFO "/proc/%s created\n", PROCFS_NAME);
     return 0;
 }
 
-static void __exit pidinfo_exit(void) {
-    remove_proc_entry(PROCFS_NAME, NULL);
-    printk(KERN_INFO "/proc/%s removed\n", PROCFS_NAME);
+static void __exit my_module_exit(void)
+{
+    printk(KERN_INFO "my_module unloaded\n");
+    proc_remove(proc_file);
 }
 
 static struct file_operations proc_fops = {
-    .read = pidinfo_read,
-    .write = pidinfo_write,
+    .read = proc_read,
+    .write = proc_write,
 };
 
-module_init(pidinfo_init);
-module_exit(pidinfo_exit);
-
+module_init(my_module_init);
+module_exit(my_module_exit);
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Your Name");
