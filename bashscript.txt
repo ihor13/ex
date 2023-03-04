@@ -1,125 +1,96 @@
-////////////////////////////////////////////////////////////////////////////////////////////
-
-#psstat
-
 #!/bin/bash
 
-source psstatcommon.sh
-
-source psstathelp.sh
-
-source psstatlsshort.sh
-
-source psstatlslong.sh
-
-source psstatlsnamehas.sh
-
-source psstatlspidis.sh
-
-source psstatlsstatis.sh
-
-source psstatlspolicyis.sh
-
-case "$1" in
-
-"--list-short")
-
-list_short
-
-;;
-
-"--list-long")
-
-list_long
-
-;;
-
-"--list-name-has")
-
-if [ $# -ne 2 ]; then
-
-help_and_exit
-
-fi
-
-shift
-
-list_name_has $1
-
-;;
-
-"--list-pid-is")
-
-if [ $# -ne 2 ]; then
-
-help_and_exit
-
-fi
-
-shift
-
-list_pid_is $1
-
-;;
-
-"--list-state-is")
-
-if [ $# -ne 2 ]; then
-
-help_and_exit
-
-fi
-
-shift
-
-list_state_is $1
-
-;;
-
-"--list-sched-policy-is")
-
-if [ $# -ne 2 ]; then
-
-help_and_exit
-
-fi
-
-shift
-
-list_sched_policy_is $1
-
-;;
-
-*)
-
-help_and_exit
-
-;;
-
-Esac
-
-/////////////////////////////////////////////////////////////////////////////////////
-
-#psstatlspidis.sh
-
-#!/bin/bash
-
-function list_pid_is() {
-
-echo "TODO (e)"
-
+function display_help {
+  echo "Usage: psstat [option]"
+  echo "Options:"
+  echo "  --help                   display this help message and exit"
+  echo "  --list-short             list process ids of all processes in the system"
+  echo "  --list-long              list detailed process information for all processes in the system"
+  echo "  --list-name-has <name>   list detailed process information for processes whose image name contains <name>"
+  echo "  --list-pid-is <pid>      list selected process status information for the process whose pid is <pid>"
+  echo "  --list-sched-policy-is <policy>  list selected process status information for processes whose CPU scheduling policy is <policy>"
 }
 
-///////////////////////////////////////////////////////////////////////////////////
-
-#psstatlspolicyis.sh
-
-#!/bin/bash
-
-function list_sched_policy_is() {
-
-echo "TODO (f)"
-
+function list_short {
+  ls /proc | grep -E '^[0-9]+$'
 }
 
-///////////////////////////////////////////////////////////////////////////////
+function list_long {
+  for pid in $(ls /proc | grep -E '^[0-9]+$'); do
+    status=$(cat /proc/$pid/status | grep '^State:')
+    name=$(cat /proc/$pid/status | grep '^Name:')
+    cmdline=$(cat /proc/$pid/cmdline)
+    echo "PID: $pid"
+    echo "$status"
+    echo "$name"
+    echo "Cmdline: $cmdline"
+    echo ""
+  done
+}
+
+function list_name_has {
+  name=$1
+  for pid in $(ls /proc | grep -E '^[0-9]+$'); do
+    pname=$(cat /proc/$pid/status | grep '^Name:' | awk '{print $2}')
+    if [[ "$pname" == *"$name"* ]]; then
+      status=$(cat /proc/$pid/status | grep '^State:')
+      cmdline=$(cat /proc/$pid/cmdline)
+      echo "PID: $pid"
+      echo "$status"
+      echo "Name: $pname"
+      echo "Cmdline: $cmdline"
+      echo ""
+    fi
+  done
+}
+
+function list_pid_is {
+  pid=$1
+  if [ -d "/proc/$pid" ]; then
+    status=$(cat /proc/$pid/status | grep '^State:')
+    name=$(cat /proc/$pid/status | grep '^Name:')
+    cmdline=$(cat /proc/$pid/cmdline)
+    echo "PID: $pid"
+    echo "$status"
+    echo "$name"
+    echo "Cmdline: $cmdline"
+  else
+    echo "Process with PID $pid not found."
+  fi
+}
+
+function list_sched_policy_is {
+  policy=$1
+  for pid in $(ls /proc | grep -E '^[0-9]+$'); do
+    spolicy=$(cat /proc/$pid/sched | grep '^policy:' | awk '{print $2}')
+    if [ "$spolicy" == "$policy" ]; then
+      status=$(cat /proc/$pid/status | grep '^State:')
+      name=$(cat /proc/$pid/status | grep '^Name:')
+      cmdline=$(cat /proc/$pid/cmdline)
+      echo "PID: $pid"
+      echo "$status"
+      echo "Name: $name"
+      echo "Cmdline: $cmdline"
+      echo ""
+    fi
+  done
+}
+
+# parse command-line arguments
+if [ $# -eq 0 ]; then
+  display_help
+  exit 1
+fi
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --help)
+      display_help
+      exit 0
+      ;;
+    --list-short)
+      list_short
+      exit 0
+      ;;
+    --list-long)
+      list_long
